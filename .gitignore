@@ -1,0 +1,11 @@
+build/
+__pycache__/
+*.pyc
+*.pyo
+*.spec
+BambuDirectMonitor-config.json
+dist/BambuDirectMonitor-config.json
+dist/webview-profile/
+.venv/
+venv/
+env/
