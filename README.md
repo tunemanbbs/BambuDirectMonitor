@@ -15,6 +15,20 @@ MQTT and renders a compact round gauge inspired by small ESP32 status displays.
 - Calculated local finish clock time under the ETA duration
 - Chamber light on/off commands when supported
 
+## Download
+
+Windows users can download the prebuilt portable app from the
+[latest GitHub Release](https://github.com/tunemanbbs/BambuDirectMonitor/releases/latest).
+
+Download `BambuDirectMonitor-Windows-v0.1.0.zip`, unzip it, and run:
+
+```text
+Run Bambu Direct Monitor.bat
+```
+
+The release build does not include any printer credentials or local config.
+Windows may show a warning because the EXE is not code-signed.
+
 ## Run
 
 Download or build the app, then run:

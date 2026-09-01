@@ -6,6 +6,7 @@ __pycache__/
 BambuDirectMonitor-config.json
 dist/BambuDirectMonitor-config.json
 dist/webview-profile/
+releases/
 .venv/
 venv/
 env/
