@@ -1,0 +1,97 @@
+name: Build, Sign, and Release
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  build-sign-release:
+    name: Build and sign Windows release
+    runs-on: windows-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install build dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt pyinstaller
+
+      - name: Build unsigned EXE
+        shell: pwsh
+        run: .\build.ps1
+
+      - name: Upload unsigned EXE for SignPath
+        id: upload-unsigned-exe
+        uses: actions/upload-artifact@v4
+        with:
+          name: bambu-direct-monitor-unsigned
+          path: dist/BambuDirectMonitor.exe
+          if-no-files-found: error
+
+      - name: Submit signing request to SignPath
+        uses: signpath/github-action-submit-signing-request@v2
+        env:
+          SIGNPATH_ARTIFACT_CONFIGURATION_SLUG: ${{ vars.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG || 'windows-release' }}
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ env.SIGNPATH_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ steps.upload-unsigned-exe.outputs.artifact-id }}
+          wait-for-completion: true
+          output-artifact-directory: signed
+
+      - name: Prepare signed release package
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          if (-not $tag -or $tag -eq "main") {
+            $tag = "manual-${{ github.run_number }}"
+          }
+
+          $packageName = "BambuDirectMonitor-Windows-$tag.zip"
+          New-Item -ItemType Directory -Force -Path release-package | Out-Null
+          Copy-Item -LiteralPath signed\BambuDirectMonitor.exe -Destination release-package\BambuDirectMonitor.exe -Force
+          Copy-Item -LiteralPath "dist\Run Bambu Direct Monitor.bat" -Destination "release-package\Run Bambu Direct Monitor.bat" -Force
+          Copy-Item -LiteralPath "dist\README - Bambu Direct Monitor.txt" -Destination "release-package\README - Bambu Direct Monitor.txt" -Force
+          Compress-Archive -Path release-package\* -DestinationPath $packageName -Force
+
+          "PACKAGE_NAME=$packageName" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Upload signed workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bambu-direct-monitor-signed
+          path: |
+            signed/BambuDirectMonitor.exe
+            ${{ env.PACKAGE_NAME }}
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" `
+            "${{ env.PACKAGE_NAME }}" `
+            "signed\BambuDirectMonitor.exe#BambuDirectMonitor.exe" `
+            --title "Bambu Direct Monitor ${{ github.ref_name }}" `
+            --notes "Signed Windows release built from GitHub Actions and signed through SignPath."

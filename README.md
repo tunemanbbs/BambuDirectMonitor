@@ -75,6 +75,11 @@ The executable is written to:
 dist\BambuDirectMonitor.exe
 ```
 
+## Code Signing
+
+The repository includes SignPath/GitHub Actions automation for signed Windows
+releases. See [docs/signpath-automation.md](docs/signpath-automation.md).
+
 ## Controls
 
 - Resize it like a normal Windows window.
