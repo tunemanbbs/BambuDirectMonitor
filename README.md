@@ -20,14 +20,16 @@ MQTT and renders a compact round gauge inspired by small ESP32 status displays.
 Windows users can download the prebuilt portable app from the
 [latest GitHub Release](https://github.com/tunemanbbs/BambuDirectMonitor/releases/latest).
 
-Download `BambuDirectMonitor-Windows-v0.1.0.zip`, unzip it, and run:
+Download the latest `BambuDirectMonitor-Windows-*.zip`, unzip it, and run:
 
 ```text
 Run Bambu Direct Monitor.bat
 ```
 
-The release build does not include any printer credentials or local config.
-Windows may show a warning because the EXE is not code-signed.
+The release build does not include any printer credentials or local config. This
+project uses the SignPath Foundation for code signing of Windows release builds.
+Until the first SignPath-approved signed release is published, older release
+assets may still show a Windows SmartScreen warning.
 
 ## Run
 
@@ -79,6 +81,11 @@ dist\BambuDirectMonitor.exe
 
 The repository includes SignPath/GitHub Actions automation for signed Windows
 releases. See [docs/signpath-automation.md](docs/signpath-automation.md).
+
+## Privacy
+
+Bambu Direct Monitor does not collect telemetry, analytics, or maintainer-run
+usage data. See [PRIVACY.md](PRIVACY.md).
 
 ## Controls
 
