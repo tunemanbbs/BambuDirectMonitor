@@ -5,6 +5,7 @@ import sys
 import threading
 import time
 import uuid
+from datetime import datetime, timedelta
 from pathlib import Path
 
 import tkinter as tk
@@ -109,6 +110,14 @@ def format_minutes(minutes):
     return f"{rem}m"
 
 
+def format_finish_time(minutes):
+    mins = as_int(minutes, 0)
+    if mins <= 0:
+        return "--"
+    finish = datetime.now() + timedelta(minutes=mins)
+    return finish.strftime("%I:%M %p").lstrip("0")
+
+
 def summarize_ams_humidity(print_status):
     ams_obj = print_status.get("ams")
     if not isinstance(ams_obj, dict):
@@ -185,7 +194,6 @@ class BambuConnection(threading.Thread):
         self.sequence_id += 1
         self.publish_json(payload)
         self.last_pushall = time.time()
-        self.emit("log", "Requested full printer status")
 
     def set_chamber_light(self, on):
         for node in ("chamber_light", "chamber_light2"):
@@ -482,6 +490,7 @@ class MonitorApp:
             "job": "--",
             "progress": 0,
             "remaining": "--",
+            "finish": "--",
             "nozzle": "--",
             "bed": "--",
             "chamber": "--",
@@ -618,11 +627,13 @@ class MonitorApp:
                       fill="#f8fafc", font=("Segoe UI", max(9, int(11 * font_scale)), "bold"))
         c.create_text(cx, cy + r * 0.52, text=self.fit_text(self.display.get("job"), 24),
                       fill="#cbd5e1", font=("Segoe UI", max(7, int(8 * font_scale))))
-        c.create_text(cx, cy + r * 0.70, text=f"ETA  {self.display.get('remaining', '--')}",
+        c.create_text(cx, cy + r * 0.66, text=f"ETA  {self.display.get('remaining', '--')}",
                       fill="#b9dcff", font=("Segoe UI", max(11, int(16 * font_scale)), "bold"))
+        c.create_text(cx, cy + r * 0.80, text=f"Finish {self.display.get('finish', '--')}",
+                      fill="#dbeafe", font=("Segoe UI", max(8, int(10 * font_scale)), "bold"))
 
         footer = self.fit_text(self.connection_text, 36)
-        c.create_text(cx, cy + r - 13, text=footer, fill="#64748b", font=("Segoe UI", max(7, int(8 * font_scale))))
+        c.create_text(cx, cy + r - 10, text=footer, fill="#64748b", font=("Segoe UI", max(7, int(8 * font_scale))))
         c.create_text(cx + r - 26, cy - r + 27, text="...", fill="#64748b", font=("Segoe UI", max(10, int(15 * font_scale)), "bold"))
 
     def start_connection(self):
@@ -699,7 +710,9 @@ class MonitorApp:
         self.display["state"] = state
         self.display["job"] = as_text(job)
         self.display["progress"] = progress
-        self.display["remaining"] = format_minutes(self.status.get("mc_remaining_time"))
+        remaining_minutes = self.status.get("mc_remaining_time")
+        self.display["remaining"] = format_minutes(remaining_minutes)
+        self.display["finish"] = format_finish_time(remaining_minutes)
         self.display["nozzle"] = f"{nozzle:.0f}/{nozzle_target:.0f}C" if nozzle or nozzle_target else "--"
         self.display["bed"] = f"{bed:.0f}/{bed_target:.0f}C" if bed or bed_target else "--"
         self.display["chamber"] = f"{as_float(chamber):.0f}C" if chamber not in (None, "") else "--"

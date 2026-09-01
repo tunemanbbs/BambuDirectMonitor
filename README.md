@@ -12,6 +12,7 @@ MQTT and renders a compact round gauge inspired by small ESP32 status displays.
 - Small resizable graphical gauge
 - Always-on-top mode
 - Progress, state, file, ETA, layer, nozzle temp, bed temp, and AMS humidity
+- Calculated local finish clock time under the ETA duration
 - Chamber light on/off commands when supported
 
 ## Run
