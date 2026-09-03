@@ -26,10 +26,8 @@ Download the latest `BambuDirectMonitor-Windows-*.zip`, unzip it, and run:
 Run Bambu Direct Monitor.bat
 ```
 
-The release build does not include any printer credentials or local config. This
-project uses the SignPath Foundation for code signing of Windows release builds.
-Until the first SignPath-approved signed release is published, older release
-assets may still show a Windows SmartScreen warning.
+The release build does not include any printer credentials or local config.
+Windows may show a warning because the EXE is not code-signed.
 
 ## Run
 
@@ -76,11 +74,6 @@ The executable is written to:
 ```text
 dist\BambuDirectMonitor.exe
 ```
-
-## Code Signing
-
-The repository includes SignPath/GitHub Actions automation for signed Windows
-releases. See [docs/signpath-automation.md](docs/signpath-automation.md).
 
 ## Privacy
 
