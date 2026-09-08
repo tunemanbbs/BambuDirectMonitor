@@ -20,6 +20,8 @@ PORT = 8883
 USERNAME = "bblp"
 PUSHALL_SECONDS = 30
 CLOUD_PUSHALL_SECONDS = 300
+COUNTED_PRINT_STATES = {"RUNNING"}
+PRINT_TIMER_SAVE_SECONDS = 60
 
 DEFAULT_CONFIG = {
     "mode": "cloud",
@@ -34,6 +36,7 @@ DEFAULT_CONFIG = {
     "frameless": False,
     "window_width": 260,
     "window_height": 260,
+    "total_print_seconds": 0,
 }
 
 
@@ -116,6 +119,14 @@ def format_finish_time(minutes):
         return "--"
     finish = datetime.now() + timedelta(minutes=mins)
     return finish.strftime("%I:%M %p").lstrip("0")
+
+
+def format_total_hours(seconds):
+    total = max(0.0, as_float(seconds, 0.0))
+    hours = total / 3600.0
+    if hours >= 100:
+        return f"{hours:.1f}h"
+    return f"{hours:.2f}h"
 
 
 def summarize_ams_humidity(print_status):
@@ -497,9 +508,13 @@ class MonitorApp:
             "layer": "--",
             "wifi": "--",
             "ams": "--",
+            "total_hours": format_total_hours(self.cfg.get("total_print_seconds", 0)),
             "errors": "",
         }
         self.drag_origin = None
+        self.print_timer_active = False
+        self.print_timer_last_ts = None
+        self.print_timer_last_save = time.time()
 
         self.build_ui()
         self.root.geometry(f"{self.cfg.get('window_width', 260)}x{self.cfg.get('window_height', 260)}")
@@ -631,12 +646,15 @@ class MonitorApp:
                       fill="#b9dcff", font=("Segoe UI", max(11, int(16 * font_scale)), "bold"))
         c.create_text(cx, cy + r * 0.80, text=f"Finish {self.display.get('finish', '--')}",
                       fill="#dbeafe", font=("Segoe UI", max(8, int(10 * font_scale)), "bold"))
+        c.create_text(cx, cy + r * 0.91, text=f"Total {self.display.get('total_hours', '--')}",
+                      fill="#96f7c2", font=("Segoe UI", max(7, int(8 * font_scale)), "bold"))
 
         footer = self.fit_text(self.connection_text, 36)
         c.create_text(cx, cy + r - 10, text=footer, fill="#64748b", font=("Segoe UI", max(7, int(8 * font_scale))))
         c.create_text(cx + r - 26, cy - r + 27, text="...", fill="#64748b", font=("Segoe UI", max(10, int(15 * font_scale)), "bold"))
 
     def start_connection(self):
+        self.update_print_timer(active=False)
         self.stop_worker()
         self.stop_event = threading.Event()
         self.worker = BambuConnection(self.cfg, self.events, self.stop_event)
@@ -649,6 +667,7 @@ class MonitorApp:
 
     def reconnect(self):
         self.connection_text = "Reconnecting"
+        self.update_print_timer(active=False)
         self.draw_face()
         self.start_connection()
 
@@ -677,6 +696,8 @@ class MonitorApp:
                 kind, payload = self.events.get_nowait()
                 if kind == "connection":
                     self.connection_text = payload
+                    if not payload.lower().startswith("connected"):
+                        self.update_print_timer(active=False)
                     self.draw_face()
                 elif kind == "status":
                     self.apply_status(payload)
@@ -688,12 +709,35 @@ class MonitorApp:
         self.root.after(200, self.process_events)
 
     def tick(self):
+        self.update_print_timer(time.time(), persist=True)
         self.draw_face()
         self.root.after(1000, self.tick)
+
+    def update_print_timer(self, now=None, active=None, persist=True):
+        now = now or time.time()
+        if active is None:
+            active = self.print_timer_active
+
+        last_ts = self.print_timer_last_ts
+        if last_ts is not None and self.print_timer_active:
+            interval = CLOUD_PUSHALL_SECONDS if self.cfg.get("mode", "cloud") == "cloud" else PUSHALL_SECONDS
+            max_elapsed = max(5, (interval * 2) + 10)
+            elapsed = max(0.0, min(now - last_ts, max_elapsed))
+            if elapsed > 0:
+                self.cfg["total_print_seconds"] = as_float(self.cfg.get("total_print_seconds"), 0.0) + elapsed
+
+        self.print_timer_active = bool(active)
+        self.print_timer_last_ts = now
+        self.display["total_hours"] = format_total_hours(self.cfg.get("total_print_seconds", 0))
+
+        if persist and now - self.print_timer_last_save >= PRINT_TIMER_SAVE_SECONDS:
+            save_config(self.cfg)
+            self.print_timer_last_save = now
 
     def apply_status(self, payload):
         self.status.update(payload)
         state_raw = as_text(self.status.get("gcode_state"), "UNKNOWN").upper()
+        self.update_print_timer(active=state_raw in COUNTED_PRINT_STATES)
         state = STATUS_LABELS.get(state_raw, state_raw.title())
         progress = max(0, min(100, as_int(self.status.get("mc_percent"), 0)))
         job = self.status.get("subtask_name") or self.status.get("gcode_file") or "--"
@@ -735,12 +779,13 @@ class MonitorApp:
 
     def close(self):
         try:
+            self.update_print_timer(time.time(), persist=True)
             width = self.root.winfo_width()
             height = self.root.winfo_height()
             if width > 240 and height > 240:
                 self.cfg["window_width"] = width
                 self.cfg["window_height"] = height
-                save_config(self.cfg)
+            save_config(self.cfg)
         except Exception:
             pass
         self.stop_worker()

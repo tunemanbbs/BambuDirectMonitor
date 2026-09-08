@@ -13,6 +13,7 @@ MQTT and renders a compact round gauge inspired by small ESP32 status displays.
 - Always-on-top mode
 - Progress, state, file, ETA, layer, nozzle temp, bed temp, and AMS humidity
 - Calculated local finish clock time under the ETA duration
+- Persistent total print-hours counter
 - Chamber light on/off commands when supported
 
 ## Download
@@ -46,6 +47,9 @@ BambuDirectMonitor-config.json
 ```
 
 Do not commit or share that config file.
+
+The app also stores its local total print-hours counter in that config file so
+the counter survives closing or restarting the app.
 
 ## Build
 

@@ -25,6 +25,7 @@ The monitor stays always on top by default.
 It also shows AMS humidity when the printer/cloud MQTT payload includes it:
 raw percent as "AMS 42%" or the unit level as "AMS L3".
 ETA shows both remaining duration and the calculated local finish clock time.
+Total shows the locally stored cumulative print-hours counter.
 
 Small display controls:
   - Resize it like a normal Windows window

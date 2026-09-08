@@ -17,8 +17,9 @@ BambuDirectMonitor-config.json
 ```
 
 Depending on the selected connection mode, this file may contain local printer
-settings, Bambu Cloud access tokens, printer serial numbers, LAN access codes, or
-other connection details needed for the app to talk to the user's printer.
+settings, Bambu Cloud access tokens, printer serial numbers, LAN access codes,
+the local total print-hours counter, or other connection details needed for the
+app to talk to the user's printer.
 
 This configuration file is not sent to the project maintainer and should not be
 shared publicly.
