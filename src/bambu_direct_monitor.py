@@ -23,6 +23,16 @@ CLOUD_PUSHALL_SECONDS = 300
 COUNTED_PRINT_STATES = {"RUNNING"}
 PRINT_TIMER_SAVE_SECONDS = 60
 
+LOWER_FIELD_LAYOUT = {
+    "eta": {"label": "ETA", "x": 50, "y": 43, "size": 19},
+    "finish": {"label": "Finish", "x": 50, "y": 53, "size": 11},
+    "layer": {"label": "Layer", "x": 50, "y": 62, "size": 12},
+    "job": {"label": "Print Name", "x": 50, "y": 70, "size": 10},
+    "ams": {"label": "AMS", "x": 50, "y": 82, "size": 10},
+    "total": {"label": "Total Print Hours", "x": 50, "y": 90, "size": 8},
+}
+LOWER_FIELD_ORDER = ("eta", "finish", "layer", "job", "ams", "total")
+
 DEFAULT_CONFIG = {
     "mode": "cloud",
     "region": "us",
@@ -39,6 +49,7 @@ DEFAULT_CONFIG = {
     "total_print_seconds": 0,
     "print_timer_job_key": "",
     "print_timer_job_accounted_seconds": 0,
+    "layout_fields": {},
 }
 
 
@@ -78,6 +89,7 @@ def load_config():
         cfg["window_width"] = 260
         cfg["window_height"] = 260
     cfg["frameless"] = bool(cfg.get("frameless", False))
+    cfg["layout_fields"] = normalize_layout_fields(cfg.get("layout_fields"))
     return cfg
 
 
@@ -103,6 +115,23 @@ def as_float(value, default=0.0):
         return float(value)
     except Exception:
         return default
+
+
+def clamp(value, minimum, maximum):
+    return max(minimum, min(maximum, value))
+
+
+def normalize_layout_fields(layout):
+    incoming = layout if isinstance(layout, dict) else {}
+    normalized = {}
+    for key, defaults in LOWER_FIELD_LAYOUT.items():
+        item = incoming.get(key) if isinstance(incoming.get(key), dict) else {}
+        normalized[key] = {
+            "x": clamp(as_float(item.get("x"), defaults["x"]), 5, 95),
+            "y": clamp(as_float(item.get("y"), defaults["y"]), 35, 95),
+            "size": clamp(as_int(item.get("size"), defaults["size"]), 6, 32),
+        }
+    return normalized
 
 
 def format_minutes(minutes):
@@ -503,6 +532,84 @@ class SettingsDialog(tk.Toplevel):
         self.destroy()
 
 
+class LayoutDialog(tk.Toplevel):
+    def __init__(self, master, cfg):
+        super().__init__(master)
+        self.title("Gauge Layout Editor")
+        self.resizable(False, False)
+        self.result = None
+        self.transient(master)
+        self.grab_set()
+
+        self.vars = {}
+        layout = normalize_layout_fields(cfg.get("layout_fields"))
+
+        body = ttk.Frame(self, padding=16)
+        body.grid(row=0, column=0, sticky="nsew")
+
+        ttk.Label(body, text="Field").grid(row=0, column=0, sticky="w", padx=(0, 10), pady=(0, 6))
+        ttk.Label(body, text="X %").grid(row=0, column=1, sticky="w", padx=4, pady=(0, 6))
+        ttk.Label(body, text="Y %").grid(row=0, column=2, sticky="w", padx=4, pady=(0, 6))
+        ttk.Label(body, text="Size").grid(row=0, column=3, sticky="w", padx=4, pady=(0, 6))
+
+        for row, key in enumerate(LOWER_FIELD_ORDER, start=1):
+            defaults = LOWER_FIELD_LAYOUT[key]
+            values = layout[key]
+            self.vars[key] = {
+                "x": tk.DoubleVar(value=values["x"]),
+                "y": tk.DoubleVar(value=values["y"]),
+                "size": tk.IntVar(value=values["size"]),
+            }
+            ttk.Label(body, text=defaults["label"]).grid(row=row, column=0, sticky="w", padx=(0, 10), pady=4)
+            ttk.Spinbox(body, from_=5, to=95, increment=1, width=6, textvariable=self.vars[key]["x"]).grid(
+                row=row, column=1, sticky="w", padx=4, pady=4
+            )
+            ttk.Spinbox(body, from_=35, to=95, increment=1, width=6, textvariable=self.vars[key]["y"]).grid(
+                row=row, column=2, sticky="w", padx=4, pady=4
+            )
+            ttk.Spinbox(body, from_=6, to=32, increment=1, width=6, textvariable=self.vars[key]["size"]).grid(
+                row=row, column=3, sticky="w", padx=4, pady=4
+            )
+
+        hint = ttk.Label(
+            body,
+            text="X and Y are percentages of the monitor window. Use Y values from about 35 to 95 for the lower display area.",
+            wraplength=420,
+            foreground="#555555",
+        )
+        hint.grid(row=len(LOWER_FIELD_ORDER) + 1, column=0, columnspan=4, sticky="w", pady=(10, 8))
+
+        buttons = ttk.Frame(body)
+        buttons.grid(row=len(LOWER_FIELD_ORDER) + 2, column=0, columnspan=4, sticky="e")
+        ttk.Button(buttons, text="Reset Defaults", command=self.reset_defaults).pack(side="left", padx=(0, 12))
+        ttk.Button(buttons, text="Cancel", command=self.cancel).pack(side="right", padx=(8, 0))
+        ttk.Button(buttons, text="Save", command=self.save).pack(side="right")
+
+        self.bind("<Return>", lambda _event: self.save())
+        self.bind("<Escape>", lambda _event: self.cancel())
+        self.protocol("WM_DELETE_WINDOW", self.cancel)
+
+    def reset_defaults(self):
+        for key, defaults in LOWER_FIELD_LAYOUT.items():
+            self.vars[key]["x"].set(defaults["x"])
+            self.vars[key]["y"].set(defaults["y"])
+            self.vars[key]["size"].set(defaults["size"])
+
+    def save(self):
+        layout = {}
+        for key in LOWER_FIELD_ORDER:
+            layout[key] = {
+                "x": self.vars[key]["x"].get(),
+                "y": self.vars[key]["y"].get(),
+                "size": self.vars[key]["size"].get(),
+            }
+        self.result = normalize_layout_fields(layout)
+        self.destroy()
+
+    def cancel(self):
+        self.destroy()
+
+
 class MonitorApp:
     def __init__(self):
         self.root = tk.Tk()
@@ -563,6 +670,7 @@ class MonitorApp:
 
         self.menu = tk.Menu(self.root, tearoff=0)
         self.menu.add_command(label="Settings", command=self.open_settings)
+        self.menu.add_command(label="Layout Editor", command=self.open_layout_editor)
         self.menu.add_command(label="Reconnect", command=self.reconnect)
         self.menu.add_separator()
         self.menu.add_command(label="Light On", command=lambda: self.send_light(True))
@@ -626,6 +734,19 @@ class MonitorApp:
             c.create_line(sx0, sy0, ex, ey, fill=accent, width=width, capstyle=tk.PROJECTING)
             remaining -= draw_length
 
+    def draw_layout_text(self, key, text, color, weight="bold", max_chars=None):
+        layout = normalize_layout_fields(self.cfg.get("layout_fields")).get(key, LOWER_FIELD_LAYOUT[key])
+        w = max(210, self.canvas.winfo_width())
+        h = max(210, self.canvas.winfo_height())
+        value = self.fit_text(text, max_chars) if max_chars else text
+        self.canvas.create_text(
+            w * (layout["x"] / 100.0),
+            h * (layout["y"] / 100.0),
+            text=value,
+            fill=color,
+            font=("Segoe UI", int(layout["size"]), weight),
+        )
+
     def draw_face(self):
         c = self.canvas
         c.delete("all")
@@ -680,18 +801,12 @@ class MonitorApp:
         c.create_text(left_x, y_at(0.33), text="nozzle", fill=muted, font=("Segoe UI", label_font))
         c.create_text(right_x, y_at(0.33), text="bed", fill=muted, font=("Segoe UI", label_font))
 
-        c.create_text(cx, y_at(0.43), text=f"ETA  {self.display.get('remaining', '--')}",
-                      fill="#b9dcff", font=("Segoe UI", max(14, int(20 * font_scale)), "bold"))
-        c.create_text(cx, y_at(0.53), text=f"Finish {self.display.get('finish', '--')}",
-                      fill="#dbeafe", font=("Segoe UI", max(9, int(11 * font_scale)), "bold"))
-        c.create_text(cx, y_at(0.64), text=self.display.get("ams", "--"),
-                      fill="#d5f9ff", font=("Segoe UI", max(8, int(10 * font_scale)), "bold"))
-        c.create_text(cx, y_at(0.71), text=f"Layer: {self.display.get('layer', '--')}",
-                      fill="#f8fafc", font=("Segoe UI", max(8, int(10 * font_scale)), "bold"))
-        c.create_text(cx, y_at(0.78), text=self.fit_text(self.display.get("job"), 28),
-                      fill="#cbd5e1", font=("Segoe UI", max(7, int(8 * font_scale))))
-        c.create_text(cx, y_at(0.87), text=f"Total {self.display.get('total_hours', '--')}",
-                      fill="#96f7c2", font=("Segoe UI", max(7, int(8 * font_scale)), "bold"))
+        self.draw_layout_text("eta", f"ETA  {self.display.get('remaining', '--')}", "#b9dcff")
+        self.draw_layout_text("finish", f"Finish {self.display.get('finish', '--')}", "#dbeafe")
+        self.draw_layout_text("layer", f"Layer: {self.display.get('layer', '--')}", "#f8fafc")
+        self.draw_layout_text("job", self.display.get("job", "--"), "#cbd5e1", weight="normal", max_chars=28)
+        self.draw_layout_text("ams", self.display.get("ams", "--"), "#d5f9ff")
+        self.draw_layout_text("total", f"Total Print Hours {self.display.get('total_hours', '--')}", "#96f7c2")
 
         footer = self.fit_text(self.connection_text, 36)
         c.create_text(cx, h - panel_pad - 5, text=footer, fill="#64748b", font=("Segoe UI", max(7, int(8 * font_scale))))
@@ -733,6 +848,14 @@ class MonitorApp:
             self.display["printer"] = self.cfg.get("printer_name", "Bambu Printer")
             self.draw_face()
             self.start_connection()
+
+    def open_layout_editor(self):
+        dialog = LayoutDialog(self.root, self.cfg)
+        self.root.wait_window(dialog)
+        if dialog.result:
+            self.cfg["layout_fields"] = dialog.result
+            save_config(self.cfg)
+            self.draw_face()
 
     def process_events(self):
         try:

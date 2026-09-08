@@ -10,6 +10,7 @@ MQTT and renders a compact round gauge inspired by small ESP32 status displays.
 - Bambu Cloud sign-in and printer picker
 - Optional LAN mode with printer IP, serial number, and LAN access code
 - Small resizable graphical gauge with square edge progress
+- Built-in layout editor for lower display fields
 - Always-on-top mode
 - Progress, state, file, ETA, layer, nozzle temp, bed temp, and AMS humidity
 - Calculated local finish clock time under the ETA duration
@@ -91,7 +92,8 @@ usage data. See [PRIVACY.md](PRIVACY.md).
 - Resize it like a normal Windows window.
 - Drag the title bar to move it.
 - Double-click the gauge to open settings.
-- Right-click for settings, reconnect, light controls, always-on-top, and exit.
+- Right-click for settings, layout editor, reconnect, light controls,
+  always-on-top, and exit.
 
 ## Attribution
 

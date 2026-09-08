@@ -33,4 +33,5 @@ Small display controls:
   - Resize it like a normal Windows window
   - Drag the title bar to move it
   - Double-click to open settings
-  - Right-click for settings, reconnect, light controls, always-on-top, exit
+  - Right-click for settings, layout editor, reconnect, light controls,
+    always-on-top, exit
