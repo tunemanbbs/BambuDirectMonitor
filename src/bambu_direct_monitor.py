@@ -400,6 +400,9 @@ class SettingsDialog(tk.Toplevel):
             "access_code": tk.StringVar(value=cfg.get("access_code", "")),
             "cloud_user_id": tk.StringVar(value=cfg.get("cloud_user_id", "")),
             "cloud_token": tk.StringVar(value=cfg.get("cloud_token", "")),
+            "total_print_hours": tk.StringVar(
+                value=f"{as_float(cfg.get('total_print_seconds'), 0.0) / 3600.0:.2f}"
+            ),
             "always_on_top": tk.BooleanVar(value=bool(cfg.get("always_on_top", True))),
         }
 
@@ -431,22 +434,28 @@ class SettingsDialog(tk.Toplevel):
             entry = ttk.Entry(body, textvariable=self.vars[key], width=36, show="*" if secret else "")
             entry.grid(row=row, column=1, sticky="ew", pady=5, padx=(12, 0))
 
+        total_row = len(fields) + 3
+        ttk.Label(body, text="Total print hours").grid(row=total_row, column=0, sticky="w", pady=5)
+        ttk.Entry(body, textvariable=self.vars["total_print_hours"], width=36).grid(
+            row=total_row, column=1, sticky="ew", pady=5, padx=(12, 0)
+        )
+
         ttk.Checkbutton(
             body,
             text="Keep monitor always on top",
             variable=self.vars["always_on_top"],
-        ).grid(row=len(fields) + 3, column=0, columnspan=2, sticky="w", pady=(10, 4))
+        ).grid(row=total_row + 1, column=0, columnspan=2, sticky="w", pady=(10, 4))
 
         hint = ttk.Label(
             body,
-            text="Cloud mode signs in through Bambu's website APIs and stores an access token. LAN mode needs printer LAN mode enabled.",
+            text="Cloud mode signs in through Bambu's website APIs and stores an access token. LAN mode needs printer LAN mode enabled. Total print hours can be seeded from the printer's current lifetime value.",
             wraplength=420,
             foreground="#555555",
         )
-        hint.grid(row=len(fields) + 4, column=0, columnspan=2, sticky="w", pady=(4, 10))
+        hint.grid(row=total_row + 2, column=0, columnspan=2, sticky="w", pady=(4, 10))
 
         buttons = ttk.Frame(body)
-        buttons.grid(row=len(fields) + 5, column=0, columnspan=2, sticky="e")
+        buttons.grid(row=total_row + 3, column=0, columnspan=2, sticky="e")
         ttk.Button(buttons, text="Cancel", command=self.cancel).pack(side="right", padx=(8, 0))
         ttk.Button(buttons, text="Save", command=self.save).pack(side="right")
 
@@ -508,6 +517,11 @@ class SettingsDialog(tk.Toplevel):
 
     def save(self):
         mode = self.vars["mode"].get()
+        try:
+            total_print_hours = max(0.0, float(self.vars["total_print_hours"].get().strip() or "0"))
+        except ValueError:
+            messagebox.showerror("Invalid settings", "Total print hours must be a number.", parent=self)
+            return
         cfg = {
             "mode": mode,
             "region": self.vars["region"].get() or "us",
@@ -517,6 +531,7 @@ class SettingsDialog(tk.Toplevel):
             "access_code": self.vars["access_code"].get().strip(),
             "cloud_user_id": self.vars["cloud_user_id"].get().strip(),
             "cloud_token": self.vars["cloud_token"].get().strip(),
+            "total_print_seconds": total_print_hours * 3600.0,
             "always_on_top": bool(self.vars["always_on_top"].get()),
         }
         if mode == "lan" and (not cfg["printer_ip"] or not cfg["serial"] or not cfg["access_code"]):

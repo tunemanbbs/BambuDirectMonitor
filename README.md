@@ -11,6 +11,7 @@ MQTT and renders a compact round gauge inspired by small ESP32 status displays.
 - Optional LAN mode with printer IP, serial number, and LAN access code
 - Small resizable graphical gauge with square edge progress
 - Built-in layout editor for lower display fields
+- Editable starting value for the total print-hours counter
 - Always-on-top mode
 - Progress, state, file, ETA, layer, nozzle temp, bed temp, and AMS humidity
 - Calculated local finish clock time under the ETA duration
@@ -53,6 +54,9 @@ The app also stores its local total print-hours counter in that config file so
 the counter survives closing or restarting the app. When the app reconnects to a
 running job, it estimates the current job's elapsed time from progress and
 remaining time, then adds any uncounted time for that job.
+
+To seed the counter from a printer's existing lifetime print time, open Settings
+and edit **Total print hours**.
 
 ## Build
 

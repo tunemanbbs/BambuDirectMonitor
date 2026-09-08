@@ -28,6 +28,7 @@ ETA shows both remaining duration and the calculated local finish clock time.
 Total shows the locally stored cumulative print-hours counter.
 If the app reconnects to a running print, it estimates and adds uncounted time
 for that current job from progress and remaining time.
+Use Settings > Total print hours to set the starting value from your printer.
 
 Small display controls:
   - Resize it like a normal Windows window
