@@ -9,7 +9,7 @@ MQTT and renders a compact round gauge inspired by small ESP32 status displays.
 
 - Bambu Cloud sign-in and printer picker
 - Optional LAN mode with printer IP, serial number, and LAN access code
-- Small resizable graphical gauge
+- Small resizable graphical gauge with square edge progress
 - Always-on-top mode
 - Progress, state, file, ETA, layer, nozzle temp, bed temp, and AMS humidity
 - Calculated local finish clock time under the ETA duration
@@ -49,7 +49,9 @@ BambuDirectMonitor-config.json
 Do not commit or share that config file.
 
 The app also stores its local total print-hours counter in that config file so
-the counter survives closing or restarting the app.
+the counter survives closing or restarting the app. When the app reconnects to a
+running job, it estimates the current job's elapsed time from progress and
+remaining time, then adds any uncounted time for that job.
 
 ## Build
 

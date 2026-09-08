@@ -37,6 +37,8 @@ DEFAULT_CONFIG = {
     "window_width": 260,
     "window_height": 260,
     "total_print_seconds": 0,
+    "print_timer_job_key": "",
+    "print_timer_job_accounted_seconds": 0,
 }
 
 
@@ -127,6 +129,23 @@ def format_total_hours(seconds):
     if hours >= 100:
         return f"{hours:.1f}h"
     return f"{hours:.2f}h"
+
+
+def print_job_key(status):
+    parts = []
+    for key in ("project_id", "profile_id", "task_id", "subtask_id", "subtask_name", "gcode_file"):
+        value = status.get(key)
+        if value not in (None, ""):
+            parts.append(f"{key}={value}")
+    return "|".join(parts)
+
+
+def estimate_job_elapsed_seconds(status):
+    progress = as_float(status.get("mc_percent"), 0.0)
+    remaining_minutes = as_int(status.get("mc_remaining_time"), 0)
+    if progress <= 0 or progress >= 100 or remaining_minutes <= 0:
+        return None
+    return (remaining_minutes * 60.0) * (progress / (100.0 - progress))
 
 
 def summarize_ams_humidity(print_status):
@@ -583,15 +602,42 @@ class MonitorApp:
             return text
         return text[:max(1, max_chars - 1)] + "..."
 
+    def draw_edge_progress(self, x0, y0, x1, y1, progress, accent):
+        c = self.canvas
+        width = max(5, int(min(x1 - x0, y1 - y0) * 0.035))
+        c.create_rectangle(x0, y0, x1, y1, outline="#1f2937", width=width)
+
+        perimeter = 2 * ((x1 - x0) + (y1 - y0))
+        remaining = perimeter * max(0, min(100, progress)) / 100.0
+        segments = (
+            (x0, y0, x1, y0),
+            (x1, y0, x1, y1),
+            (x1, y1, x0, y1),
+            (x0, y1, x0, y0),
+        )
+        for sx0, sy0, sx1, sy1 in segments:
+            length = ((sx1 - sx0) ** 2 + (sy1 - sy0) ** 2) ** 0.5
+            if remaining <= 0:
+                break
+            draw_length = min(remaining, length)
+            ratio = draw_length / length if length else 0
+            ex = sx0 + (sx1 - sx0) * ratio
+            ey = sy0 + (sy1 - sy0) * ratio
+            c.create_line(sx0, sy0, ex, ey, fill=accent, width=width, capstyle=tk.PROJECTING)
+            remaining -= draw_length
+
     def draw_face(self):
         c = self.canvas
         c.delete("all")
         w = max(210, c.winfo_width())
         h = max(210, c.winfo_height())
-        size = min(w, h) - 14
+        size = min(w, h)
         cx, cy = w / 2, h / 2
-        r = size / 2
-        bbox = (cx - r, cy - r, cx + r, cy + r)
+        panel_pad = max(12, int(size * 0.055))
+        panel = (panel_pad, panel_pad, w - panel_pad, h - panel_pad)
+        content_top = panel_pad + 8
+        content_h = max(160, h - (panel_pad * 2) - 30)
+        y_at = lambda fraction: content_top + content_h * fraction
         progress = max(0, min(100, int(self.display.get("progress", 0))))
         connected = self.connection_text.lower().startswith(("connected", "requested", "subscribed"))
         alert = bool(self.display.get("errors"))
@@ -599,28 +645,23 @@ class MonitorApp:
         muted = "#8fa2b5"
 
         font_scale = size / 300.0
-        arc_width = max(7, int(size * 0.04))
-        c.create_oval(cx - r, cy - r, cx + r, cy + r, fill="#06080d", outline="#1a2432", width=max(3, int(size * 0.015)))
-        c.create_oval(cx - r + 13, cy - r + 13, cx + r - 13, cy + r - 13, outline="#111a25", width=1)
-
-        arc_pad = max(16, int(size * 0.06))
-        arc_box = (bbox[0] + arc_pad, bbox[1] + arc_pad, bbox[2] - arc_pad, bbox[3] - arc_pad)
-        c.create_arc(arc_box, start=112, extent=-300, style="arc", outline="#1f2937", width=arc_width)
-        c.create_arc(arc_box, start=112, extent=-(300 * progress / 100), style="arc", outline=accent, width=arc_width)
+        c.create_rectangle(0, 0, w, h, fill="#05070a", outline="")
+        c.create_rectangle(panel, fill="#06080d", outline="#111a25", width=1)
+        self.draw_edge_progress(panel_pad / 2, panel_pad / 2, w - panel_pad / 2, h - panel_pad / 2, progress, accent)
 
         dot_color = "#32e649" if connected else "#64748b"
-        dot_y = cy - r + size * 0.145
-        c.create_oval(cx - 3, dot_y - 3, cx + 3, dot_y + 3, fill=dot_color, outline="")
+        dot_y = y_at(0.04)
+        c.create_oval(panel_pad + 4, dot_y - 3, panel_pad + 10, dot_y + 3, fill=dot_color, outline="")
         pct_font = max(12, int(22 * font_scale))
         state_font = max(9, int(13 * font_scale))
-        c.create_text(cx, cy - r + size * 0.235, text=f"{progress}%", fill=accent, font=("Segoe UI", pct_font, "bold"))
-        c.create_text(cx, cy - r + size * 0.315, text=self.fit_text(self.display.get("state"), 14).lower(),
+        c.create_text(cx, y_at(0.04), text=f"{progress}%", fill=accent, font=("Segoe UI", pct_font, "bold"))
+        c.create_text(cx, y_at(0.13), text=self.fit_text(self.display.get("state"), 14).lower(),
                       fill="#66f59a", font=("Segoe UI", state_font, "italic"))
 
         printer_w = size * 0.12
         printer_h = size * 0.12
         px0 = cx - printer_w / 2
-        py0 = cy - printer_h / 2 + size * 0.025
+        py0 = y_at(0.20)
         c.create_rectangle(px0, py0, px0 + printer_w, py0 + printer_h, outline=accent, width=2)
         c.create_rectangle(px0 + printer_w * 0.22, py0 + printer_h * 0.18,
                            px0 + printer_w * 0.78, py0 + printer_h * 0.54, fill=accent, outline="")
@@ -629,29 +670,34 @@ class MonitorApp:
 
         metric_font = max(9, int(12 * font_scale))
         label_font = max(7, int(8 * font_scale))
-        c.create_text(cx - r * 0.56, cy - r * 0.01, text=self.display.get("nozzle", "--"),
+        metric_y = y_at(0.27)
+        left_x = panel_pad + size * 0.19
+        right_x = w - panel_pad - size * 0.19
+        c.create_text(left_x, metric_y, text=self.display.get("nozzle", "--"),
                       fill="#f8fafc", font=("Segoe UI", metric_font, "bold"), anchor="center")
-        c.create_text(cx + r * 0.56, cy - r * 0.01, text=self.display.get("bed", "--"),
+        c.create_text(right_x, metric_y, text=self.display.get("bed", "--"),
                       fill="#f8fafc", font=("Segoe UI", metric_font, "bold"), anchor="center")
-        c.create_text(cx - r * 0.56, cy + r * 0.11, text="nozzle", fill=muted, font=("Segoe UI", label_font))
-        c.create_text(cx + r * 0.56, cy + r * 0.11, text="bed", fill=muted, font=("Segoe UI", label_font))
+        c.create_text(left_x, y_at(0.33), text="nozzle", fill=muted, font=("Segoe UI", label_font))
+        c.create_text(right_x, y_at(0.33), text="bed", fill=muted, font=("Segoe UI", label_font))
 
-        c.create_text(cx, cy + r * 0.24, text=self.display.get("ams", "--"),
+        c.create_text(cx, y_at(0.42), text="Total Print Time",
+                      fill=muted, font=("Segoe UI", max(7, int(8 * font_scale)), "bold"))
+        c.create_text(cx, y_at(0.50), text=self.display.get("total_hours", "--"),
+                      fill="#96f7c2", font=("Segoe UI", max(14, int(20 * font_scale)), "bold"))
+        c.create_text(cx, y_at(0.61), text=self.display.get("ams", "--"),
                       fill="#d5f9ff", font=("Segoe UI", max(8, int(10 * font_scale)), "bold"))
-        c.create_text(cx, cy + r * 0.39, text=f"Layer: {self.display.get('layer', '--')}",
-                      fill="#f8fafc", font=("Segoe UI", max(9, int(11 * font_scale)), "bold"))
-        c.create_text(cx, cy + r * 0.52, text=self.fit_text(self.display.get("job"), 24),
+        c.create_text(cx, y_at(0.68), text=f"Layer: {self.display.get('layer', '--')}",
+                      fill="#f8fafc", font=("Segoe UI", max(8, int(10 * font_scale)), "bold"))
+        c.create_text(cx, y_at(0.75), text=self.fit_text(self.display.get("job"), 28),
                       fill="#cbd5e1", font=("Segoe UI", max(7, int(8 * font_scale))))
-        c.create_text(cx, cy + r * 0.66, text=f"ETA  {self.display.get('remaining', '--')}",
-                      fill="#b9dcff", font=("Segoe UI", max(11, int(16 * font_scale)), "bold"))
-        c.create_text(cx, cy + r * 0.80, text=f"Finish {self.display.get('finish', '--')}",
-                      fill="#dbeafe", font=("Segoe UI", max(8, int(10 * font_scale)), "bold"))
-        c.create_text(cx, cy + r * 0.91, text=f"Total {self.display.get('total_hours', '--')}",
-                      fill="#96f7c2", font=("Segoe UI", max(7, int(8 * font_scale)), "bold"))
+        c.create_text(cx, y_at(0.84), text=f"ETA  {self.display.get('remaining', '--')}",
+                      fill="#b9dcff", font=("Segoe UI", max(10, int(14 * font_scale)), "bold"))
+        c.create_text(cx, y_at(0.93), text=f"Finish {self.display.get('finish', '--')}",
+                      fill="#dbeafe", font=("Segoe UI", max(8, int(9 * font_scale)), "bold"))
 
         footer = self.fit_text(self.connection_text, 36)
-        c.create_text(cx, cy + r - 10, text=footer, fill="#64748b", font=("Segoe UI", max(7, int(8 * font_scale))))
-        c.create_text(cx + r - 26, cy - r + 27, text="...", fill="#64748b", font=("Segoe UI", max(10, int(15 * font_scale)), "bold"))
+        c.create_text(cx, h - panel_pad - 5, text=footer, fill="#64748b", font=("Segoe UI", max(7, int(8 * font_scale))))
+        c.create_text(w - panel_pad - 15, panel_pad + 13, text="...", fill="#64748b", font=("Segoe UI", max(10, int(15 * font_scale)), "bold"))
 
     def start_connection(self):
         self.update_print_timer(active=False)
@@ -723,8 +769,7 @@ class MonitorApp:
             interval = CLOUD_PUSHALL_SECONDS if self.cfg.get("mode", "cloud") == "cloud" else PUSHALL_SECONDS
             max_elapsed = max(5, (interval * 2) + 10)
             elapsed = max(0.0, min(now - last_ts, max_elapsed))
-            if elapsed > 0:
-                self.cfg["total_print_seconds"] = as_float(self.cfg.get("total_print_seconds"), 0.0) + elapsed
+            self.add_print_seconds(elapsed)
 
         self.print_timer_active = bool(active)
         self.print_timer_last_ts = now
@@ -734,10 +779,40 @@ class MonitorApp:
             save_config(self.cfg)
             self.print_timer_last_save = now
 
+    def add_print_seconds(self, seconds):
+        seconds = max(0.0, as_float(seconds, 0.0))
+        if seconds <= 0:
+            return
+        self.cfg["total_print_seconds"] = as_float(self.cfg.get("total_print_seconds"), 0.0) + seconds
+        self.cfg["print_timer_job_accounted_seconds"] = (
+            as_float(self.cfg.get("print_timer_job_accounted_seconds"), 0.0) + seconds
+        )
+
+    def reconcile_print_job(self):
+        job_key = print_job_key(self.status)
+        if not job_key:
+            return
+        if self.cfg.get("print_timer_job_key") != job_key:
+            self.cfg["print_timer_job_key"] = job_key
+            self.cfg["print_timer_job_accounted_seconds"] = 0
+
+        estimated_elapsed = estimate_job_elapsed_seconds(self.status)
+        if estimated_elapsed is None:
+            return
+        accounted = as_float(self.cfg.get("print_timer_job_accounted_seconds"), 0.0)
+        if estimated_elapsed > accounted + 1:
+            self.add_print_seconds(estimated_elapsed - accounted)
+
     def apply_status(self, payload):
         self.status.update(payload)
         state_raw = as_text(self.status.get("gcode_state"), "UNKNOWN").upper()
         self.update_print_timer(active=state_raw in COUNTED_PRINT_STATES)
+        if state_raw in COUNTED_PRINT_STATES:
+            self.reconcile_print_job()
+            self.display["total_hours"] = format_total_hours(self.cfg.get("total_print_seconds", 0))
+        elif state_raw in ("FINISH", "FAILED", "IDLE"):
+            self.cfg["print_timer_job_key"] = ""
+            self.cfg["print_timer_job_accounted_seconds"] = 0
         state = STATUS_LABELS.get(state_raw, state_raw.title())
         progress = max(0, min(100, as_int(self.status.get("mc_percent"), 0)))
         job = self.status.get("subtask_name") or self.status.get("gcode_file") or "--"
