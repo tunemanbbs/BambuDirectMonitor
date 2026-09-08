@@ -680,20 +680,18 @@ class MonitorApp:
         c.create_text(left_x, y_at(0.33), text="nozzle", fill=muted, font=("Segoe UI", label_font))
         c.create_text(right_x, y_at(0.33), text="bed", fill=muted, font=("Segoe UI", label_font))
 
-        c.create_text(cx, y_at(0.42), text="Total Print Time",
-                      fill=muted, font=("Segoe UI", max(7, int(8 * font_scale)), "bold"))
-        c.create_text(cx, y_at(0.50), text=self.display.get("total_hours", "--"),
-                      fill="#96f7c2", font=("Segoe UI", max(14, int(20 * font_scale)), "bold"))
-        c.create_text(cx, y_at(0.61), text=self.display.get("ams", "--"),
+        c.create_text(cx, y_at(0.43), text=f"ETA  {self.display.get('remaining', '--')}",
+                      fill="#b9dcff", font=("Segoe UI", max(14, int(20 * font_scale)), "bold"))
+        c.create_text(cx, y_at(0.53), text=f"Finish {self.display.get('finish', '--')}",
+                      fill="#dbeafe", font=("Segoe UI", max(9, int(11 * font_scale)), "bold"))
+        c.create_text(cx, y_at(0.64), text=self.display.get("ams", "--"),
                       fill="#d5f9ff", font=("Segoe UI", max(8, int(10 * font_scale)), "bold"))
-        c.create_text(cx, y_at(0.68), text=f"Layer: {self.display.get('layer', '--')}",
+        c.create_text(cx, y_at(0.71), text=f"Layer: {self.display.get('layer', '--')}",
                       fill="#f8fafc", font=("Segoe UI", max(8, int(10 * font_scale)), "bold"))
-        c.create_text(cx, y_at(0.75), text=self.fit_text(self.display.get("job"), 28),
+        c.create_text(cx, y_at(0.78), text=self.fit_text(self.display.get("job"), 28),
                       fill="#cbd5e1", font=("Segoe UI", max(7, int(8 * font_scale))))
-        c.create_text(cx, y_at(0.84), text=f"ETA  {self.display.get('remaining', '--')}",
-                      fill="#b9dcff", font=("Segoe UI", max(10, int(14 * font_scale)), "bold"))
-        c.create_text(cx, y_at(0.93), text=f"Finish {self.display.get('finish', '--')}",
-                      fill="#dbeafe", font=("Segoe UI", max(8, int(9 * font_scale)), "bold"))
+        c.create_text(cx, y_at(0.87), text=f"Total {self.display.get('total_hours', '--')}",
+                      fill="#96f7c2", font=("Segoe UI", max(7, int(8 * font_scale)), "bold"))
 
         footer = self.fit_text(self.connection_text, 36)
         c.create_text(cx, h - panel_pad - 5, text=footer, fill="#64748b", font=("Segoe UI", max(7, int(8 * font_scale))))
