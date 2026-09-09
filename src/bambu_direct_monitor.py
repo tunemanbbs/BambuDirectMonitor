@@ -231,7 +231,8 @@ DASHBOARD_HTML = """<!doctype html>
     * { box-sizing: border-box; }
     body {
       margin: 0;
-      min-height: 100vh;
+      min-height: 100svh;
+      overflow-x: hidden;
       background: #05070a;
       color: #f8fafc;
       display: flex;
@@ -239,41 +240,68 @@ DASHBOARD_HTML = """<!doctype html>
       justify-content: center;
     }
     main {
-      width: min(100vw, 520px);
-      min-height: 100vh;
-      padding: 18px;
+      width: 100%;
+      max-width: 520px;
+      min-height: 100svh;
+      padding: 14px;
       display: grid;
-      grid-template-rows: auto auto 1fr auto;
-      gap: 14px;
+      grid-template-rows: auto auto auto auto;
+      gap: 12px;
+      align-content: start;
     }
     .top {
       display: flex;
       justify-content: space-between;
       align-items: center;
       gap: 12px;
+      min-width: 0;
     }
-    h1 { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: 0; }
-    .state { color: #66f59a; font-size: 14px; font-style: italic; }
+    h1 { margin: 0; min-width: 0; overflow-wrap: anywhere; font-size: 18px; font-weight: 700; letter-spacing: 0; }
+    .state { flex: 0 1 auto; min-width: 0; color: #66f59a; font-size: 14px; font-style: italic; text-align: right; overflow-wrap: anywhere; }
     .ring {
       border: 8px solid #1f2937;
       border-radius: 8px;
-      min-height: 300px;
-      padding: 24px;
+      min-height: clamp(190px, 36svh, 270px);
+      padding: 18px;
       display: grid;
-      gap: 12px;
+      gap: 10px;
       align-content: center;
       box-shadow: inset 0 0 0 1px #111a25;
     }
-    .progress { color: #32e649; font-size: 54px; font-weight: 800; text-align: center; line-height: 1; }
-    .eta { color: #b9dcff; font-size: 38px; font-weight: 800; text-align: center; line-height: 1.1; }
+    .progress { color: #32e649; font-size: clamp(42px, 13vw, 54px); font-weight: 800; text-align: center; line-height: 1; }
+    .eta { color: #b9dcff; font-size: clamp(28px, 9vw, 38px); font-weight: 800; text-align: center; line-height: 1.1; }
     .finish { color: #dbeafe; font-size: 20px; font-weight: 700; text-align: center; }
     .job { color: #cbd5e1; font-size: 16px; text-align: center; overflow-wrap: anywhere; }
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    .cell { border: 1px solid #182233; border-radius: 8px; padding: 12px; background: #070b12; }
+    .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .cell { min-width: 0; min-height: 76px; border: 1px solid #182233; border-radius: 8px; padding: 12px; background: #070b12; }
+    .total-cell { grid-column: 1 / -1; }
     .label { color: #8fa2b5; font-size: 12px; margin-bottom: 4px; }
-    .value { font-size: 20px; font-weight: 700; }
+    .value { min-width: 0; overflow-wrap: anywhere; font-size: clamp(18px, 5vw, 20px); font-weight: 700; }
     .total { color: #96f7c2; }
     .foot { color: #64748b; font-size: 12px; text-align: center; }
+    @media (max-width: 390px) {
+      main { padding: 10px; gap: 10px; }
+      .ring { border-width: 6px; padding: 14px; min-height: 190px; }
+      .grid { gap: 8px; }
+      .cell { min-height: 70px; padding: 10px; }
+      .finish { font-size: 18px; }
+      .job { font-size: 14px; }
+    }
+    @media (max-height: 760px) {
+      main { padding-top: 8px; padding-bottom: 8px; gap: 8px; }
+      h1 { font-size: 16px; }
+      .state { font-size: 13px; }
+      .ring { min-height: 172px; padding: 12px; gap: 7px; border-width: 6px; }
+      .progress { font-size: 42px; }
+      .eta { font-size: 30px; }
+      .finish { font-size: 17px; }
+      .job { font-size: 13px; }
+      .grid { gap: 8px; }
+      .cell { min-height: 64px; padding: 9px 10px; }
+      .label { font-size: 11px; margin-bottom: 3px; }
+      .value { font-size: 18px; }
+      .foot { font-size: 11px; }
+    }
   </style>
 </head>
 <body>
@@ -293,13 +321,12 @@ DASHBOARD_HTML = """<!doctype html>
       <div class="cell"><div class="label">AMS</div><div class="value" id="ams">--</div></div>
       <div class="cell"><div class="label">Nozzle</div><div class="value" id="nozzle">--</div></div>
       <div class="cell"><div class="label">Bed</div><div class="value" id="bed">--</div></div>
-      <div class="cell"><div class="label">Total Print Hours</div><div class="value total" id="total">--</div></div>
-      <div class="cell"><div class="label">Connection</div><div class="value" id="connection">--</div></div>
+      <div class="cell total-cell"><div class="label">Total Print Hours</div><div class="value total" id="total">--</div></div>
     </section>
     <footer class="foot" id="updated">Waiting for data...</footer>
   </main>
   <script>
-    const ids = ["printer","state","progress","eta","finish","job","layer","ams","nozzle","bed","total","connection","updated"];
+    const ids = ["printer","state","progress","eta","finish","job","layer","ams","nozzle","bed","total","updated"];
     const el = Object.fromEntries(ids.map(id => [id, document.getElementById(id)]));
     function setText(id, value) { el[id].textContent = value || "--"; }
     let workingStatusUrl = null;
@@ -332,10 +359,10 @@ DASHBOARD_HTML = """<!doctype html>
         setText("nozzle", data.nozzle);
         setText("bed", data.bed);
         setText("total", data.total_hours);
-        setText("connection", data.connection);
         setText("updated", data.updated ? `Updated ${data.updated}` : "Waiting for data...");
       } catch (err) {
-        setText("connection", "Dashboard offline");
+        setText("state", "Offline");
+        setText("updated", "Dashboard offline");
       }
     }
     refresh();
@@ -1165,7 +1192,6 @@ class MonitorApp:
                 "wifi": self.display.get("wifi", "--"),
                 "ams": self.display.get("ams", "--"),
                 "total_hours": self.display.get("total_hours", "--"),
-                "connection": self.connection_text,
                 "updated": self.last_update,
             }
 
