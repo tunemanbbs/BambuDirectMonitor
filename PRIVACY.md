@@ -32,6 +32,10 @@ services to authenticate and retrieve printer status.
 When configured for LAN mode, the app communicates directly with the user's
 printer on the local network.
 
+When the read-only phone dashboard is enabled, the app serves current display
+status on the configured local port. This dashboard does not expose stored
+printer credentials and does not include printer-control actions.
+
 ## Third Parties
 
 The project maintainer does not operate a server for this app and does not

@@ -1,3 +1,5 @@
+import ftplib
+import io
 import json
 import queue
 import ssl
@@ -6,7 +8,9 @@ import threading
 import time
 import uuid
 from datetime import datetime, timedelta
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import urlparse
 
 import tkinter as tk
 from tkinter import messagebox, simpledialog, ttk
@@ -46,6 +50,15 @@ DEFAULT_CONFIG = {
     "frameless": False,
     "window_width": 260,
     "window_height": 260,
+    "web_enabled": False,
+    "web_port": 8765,
+    "ftp_publish_enabled": False,
+    "ftp_host": "",
+    "ftp_username": "",
+    "ftp_password": "",
+    "ftp_directory": "",
+    "ftp_public_url": "",
+    "ftp_publish_seconds": 10,
     "total_print_seconds": 0,
     "print_timer_job_key": "",
     "print_timer_job_accounted_seconds": 0,
@@ -205,6 +218,215 @@ def summarize_ams_humidity(print_status):
             return "AMS " + value[3:]
         return "AMS " + value
     return " ".join(readings[:2])
+
+
+DASHBOARD_HTML = """<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bambu Direct Monitor</title>
+  <style>
+    :root { color-scheme: dark; font-family: "Segoe UI", system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background: #05070a;
+      color: #f8fafc;
+      display: flex;
+      align-items: stretch;
+      justify-content: center;
+    }
+    main {
+      width: min(100vw, 520px);
+      min-height: 100vh;
+      padding: 18px;
+      display: grid;
+      grid-template-rows: auto auto 1fr auto;
+      gap: 14px;
+    }
+    .top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+    h1 { margin: 0; font-size: 18px; font-weight: 700; letter-spacing: 0; }
+    .state { color: #66f59a; font-size: 14px; font-style: italic; }
+    .ring {
+      border: 8px solid #1f2937;
+      border-radius: 8px;
+      min-height: 300px;
+      padding: 24px;
+      display: grid;
+      gap: 12px;
+      align-content: center;
+      box-shadow: inset 0 0 0 1px #111a25;
+    }
+    .progress { color: #32e649; font-size: 54px; font-weight: 800; text-align: center; line-height: 1; }
+    .eta { color: #b9dcff; font-size: 38px; font-weight: 800; text-align: center; line-height: 1.1; }
+    .finish { color: #dbeafe; font-size: 20px; font-weight: 700; text-align: center; }
+    .job { color: #cbd5e1; font-size: 16px; text-align: center; overflow-wrap: anywhere; }
+    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .cell { border: 1px solid #182233; border-radius: 8px; padding: 12px; background: #070b12; }
+    .label { color: #8fa2b5; font-size: 12px; margin-bottom: 4px; }
+    .value { font-size: 20px; font-weight: 700; }
+    .total { color: #96f7c2; }
+    .foot { color: #64748b; font-size: 12px; text-align: center; }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="top">
+      <h1 id="printer">Bambu Printer</h1>
+      <div class="state" id="state">--</div>
+    </section>
+    <section class="ring">
+      <div class="progress" id="progress">0%</div>
+      <div class="eta" id="eta">ETA --</div>
+      <div class="finish" id="finish">Finish --</div>
+      <div class="job" id="job">--</div>
+    </section>
+    <section class="grid">
+      <div class="cell"><div class="label">Layer</div><div class="value" id="layer">--</div></div>
+      <div class="cell"><div class="label">AMS</div><div class="value" id="ams">--</div></div>
+      <div class="cell"><div class="label">Nozzle</div><div class="value" id="nozzle">--</div></div>
+      <div class="cell"><div class="label">Bed</div><div class="value" id="bed">--</div></div>
+      <div class="cell"><div class="label">Total Print Hours</div><div class="value total" id="total">--</div></div>
+      <div class="cell"><div class="label">Connection</div><div class="value" id="connection">--</div></div>
+    </section>
+    <footer class="foot" id="updated">Waiting for data...</footer>
+  </main>
+  <script>
+    const ids = ["printer","state","progress","eta","finish","job","layer","ams","nozzle","bed","total","connection","updated"];
+    const el = Object.fromEntries(ids.map(id => [id, document.getElementById(id)]));
+    function setText(id, value) { el[id].textContent = value || "--"; }
+    let workingStatusUrl = null;
+    async function fetchStatus() {
+      const urls = workingStatusUrl ? [workingStatusUrl] : ["/api/status", "status.json"];
+      let lastError = null;
+      for (const url of urls) {
+        try {
+          const res = await fetch(url, { cache: "no-store" });
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          workingStatusUrl = url;
+          return await res.json();
+        } catch (err) {
+          lastError = err;
+        }
+      }
+      throw lastError || new Error("No status endpoint");
+    }
+    async function refresh() {
+      try {
+        const data = await fetchStatus();
+        setText("printer", data.printer);
+        setText("state", data.state);
+        setText("progress", `${data.progress ?? 0}%`);
+        setText("eta", `ETA ${data.remaining || "--"}`);
+        setText("finish", `Finish ${data.finish || "--"}`);
+        setText("job", data.job);
+        setText("layer", data.layer);
+        setText("ams", data.ams);
+        setText("nozzle", data.nozzle);
+        setText("bed", data.bed);
+        setText("total", data.total_hours);
+        setText("connection", data.connection);
+        setText("updated", data.updated ? `Updated ${data.updated}` : "Waiting for data...");
+      } catch (err) {
+        setText("connection", "Dashboard offline");
+      }
+    }
+    refresh();
+    setInterval(refresh, 2000);
+  </script>
+</body>
+</html>
+"""
+
+
+class DashboardHandler(BaseHTTPRequestHandler):
+    def log_message(self, _format, *_args):
+        return
+
+    def send_bytes(self, status, content_type, payload):
+        self.send_response(status)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Access-Control-Allow-Origin", "*")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def do_GET(self):
+        path = urlparse(self.path).path
+        if path in ("", "/", "/index.html"):
+            self.send_bytes(200, "text/html; charset=utf-8", DASHBOARD_HTML.encode("utf-8"))
+            return
+        if path == "/api/status":
+            payload = json.dumps(self.server.app.public_status(), separators=(",", ":")).encode("utf-8")
+            self.send_bytes(200, "application/json; charset=utf-8", payload)
+            return
+        self.send_bytes(404, "text/plain; charset=utf-8", b"Not found")
+
+
+class FtpPublisher(threading.Thread):
+    def __init__(self, cfg, app, events, stop_event):
+        super().__init__(daemon=True)
+        self.cfg = dict(cfg)
+        self.app = app
+        self.events = events
+        self.stop_event = stop_event
+        self.last_error = ""
+
+    def emit(self, kind, payload):
+        self.events.put((kind, payload))
+
+    def connect(self):
+        ftp = ftplib.FTP()
+        ftp.connect(self.cfg.get("ftp_host", ""), 21, timeout=15)
+        ftp.login(self.cfg.get("ftp_username", ""), self.cfg.get("ftp_password", ""))
+        directory = self.cfg.get("ftp_directory", "").strip()
+        if directory:
+            ftp.cwd(directory)
+        return ftp
+
+    def upload_bytes(self, ftp, filename, payload):
+        ftp.storbinary(f"STOR {filename}", io.BytesIO(payload))
+
+    def status_payload(self):
+        payload = self.app.public_status()
+        payload["generated_at"] = datetime.now().isoformat(timespec="seconds")
+        return json.dumps(payload, indent=2).encode("utf-8")
+
+    def publish_once(self, include_html=False):
+        with self.connect() as ftp:
+            if include_html:
+                self.upload_bytes(ftp, "index.html", DASHBOARD_HTML.encode("utf-8"))
+            self.upload_bytes(ftp, "status.json", self.status_payload())
+
+    def run(self):
+        interval = max(2, as_int(self.cfg.get("ftp_publish_seconds"), 10))
+        try:
+            self.publish_once(include_html=True)
+        except Exception as exc:
+            self.last_error = str(exc)
+            self.emit("log", f"Dashboard publish failed: {exc}")
+
+        while not self.stop_event.is_set():
+            for _ in range(interval):
+                if self.stop_event.is_set():
+                    return
+                time.sleep(1)
+            try:
+                self.publish_once(include_html=False)
+                self.last_error = ""
+            except Exception as exc:
+                text = str(exc)
+                if text != self.last_error:
+                    self.last_error = text
+                    self.emit("log", f"Dashboard publish failed: {exc}")
 
 
 def make_client(client_id):
@@ -403,6 +625,15 @@ class SettingsDialog(tk.Toplevel):
             "total_print_hours": tk.StringVar(
                 value=f"{as_float(cfg.get('total_print_seconds'), 0.0) / 3600.0:.2f}"
             ),
+            "web_enabled": tk.BooleanVar(value=bool(cfg.get("web_enabled", False))),
+            "web_port": tk.StringVar(value=str(as_int(cfg.get("web_port"), 8765) or 8765)),
+            "ftp_publish_enabled": tk.BooleanVar(value=bool(cfg.get("ftp_publish_enabled", False))),
+            "ftp_host": tk.StringVar(value=cfg.get("ftp_host", "")),
+            "ftp_username": tk.StringVar(value=cfg.get("ftp_username", "")),
+            "ftp_password": tk.StringVar(value=cfg.get("ftp_password", "")),
+            "ftp_directory": tk.StringVar(value=cfg.get("ftp_directory", "")),
+            "ftp_public_url": tk.StringVar(value=cfg.get("ftp_public_url", "")),
+            "ftp_publish_seconds": tk.StringVar(value=str(as_int(cfg.get("ftp_publish_seconds"), 10) or 10)),
             "always_on_top": tk.BooleanVar(value=bool(cfg.get("always_on_top", True))),
         }
 
@@ -440,22 +671,58 @@ class SettingsDialog(tk.Toplevel):
             row=total_row, column=1, sticky="ew", pady=5, padx=(12, 0)
         )
 
+        web_row = total_row + 1
+        ttk.Checkbutton(
+            body,
+            text="Enable read-only phone dashboard",
+            variable=self.vars["web_enabled"],
+        ).grid(row=web_row, column=0, columnspan=2, sticky="w", pady=(10, 4))
+
+        port_row = web_row + 1
+        ttk.Label(body, text="Dashboard port").grid(row=port_row, column=0, sticky="w", pady=5)
+        ttk.Entry(body, textvariable=self.vars["web_port"], width=36).grid(
+            row=port_row, column=1, sticky="ew", pady=5, padx=(12, 0)
+        )
+
+        ftp_row = port_row + 1
+        ttk.Checkbutton(
+            body,
+            text="Publish dashboard to website by FTP",
+            variable=self.vars["ftp_publish_enabled"],
+        ).grid(row=ftp_row, column=0, columnspan=2, sticky="w", pady=(10, 4))
+
+        ftp_fields = [
+            ("FTP host", "ftp_host", False),
+            ("FTP username", "ftp_username", False),
+            ("FTP password", "ftp_password", True),
+            ("FTP directory", "ftp_directory", False),
+            ("Public URL", "ftp_public_url", False),
+            ("Publish seconds", "ftp_publish_seconds", False),
+        ]
+        for idx, (label, key, secret) in enumerate(ftp_fields):
+            row = ftp_row + 1 + idx
+            ttk.Label(body, text=label).grid(row=row, column=0, sticky="w", pady=5)
+            ttk.Entry(body, textvariable=self.vars[key], width=36, show="*" if secret else "").grid(
+                row=row, column=1, sticky="ew", pady=5, padx=(12, 0)
+            )
+
+        after_ftp_row = ftp_row + len(ftp_fields) + 1
         ttk.Checkbutton(
             body,
             text="Keep monitor always on top",
             variable=self.vars["always_on_top"],
-        ).grid(row=total_row + 1, column=0, columnspan=2, sticky="w", pady=(10, 4))
+        ).grid(row=after_ftp_row, column=0, columnspan=2, sticky="w", pady=(10, 4))
 
         hint = ttk.Label(
             body,
-            text="Cloud mode signs in through Bambu's website APIs and stores an access token. LAN mode needs printer LAN mode enabled. Total print hours can be seeded from the printer's current lifetime value.",
+            text="Cloud mode signs in through Bambu's website APIs and stores an access token. LAN mode needs printer LAN mode enabled. Dashboards are read-only.",
             wraplength=420,
             foreground="#555555",
         )
-        hint.grid(row=total_row + 2, column=0, columnspan=2, sticky="w", pady=(4, 10))
+        hint.grid(row=after_ftp_row + 1, column=0, columnspan=2, sticky="w", pady=(4, 10))
 
         buttons = ttk.Frame(body)
-        buttons.grid(row=total_row + 3, column=0, columnspan=2, sticky="e")
+        buttons.grid(row=after_ftp_row + 2, column=0, columnspan=2, sticky="e")
         ttk.Button(buttons, text="Cancel", command=self.cancel).pack(side="right", padx=(8, 0))
         ttk.Button(buttons, text="Save", command=self.save).pack(side="right")
 
@@ -522,6 +789,18 @@ class SettingsDialog(tk.Toplevel):
         except ValueError:
             messagebox.showerror("Invalid settings", "Total print hours must be a number.", parent=self)
             return
+        web_port = as_int(self.vars["web_port"].get(), 8765)
+        if web_port < 1 or web_port > 65535:
+            messagebox.showerror("Invalid settings", "Dashboard port must be between 1 and 65535.", parent=self)
+            return
+        ftp_interval = as_int(self.vars["ftp_publish_seconds"].get(), 10)
+        if ftp_interval < 2:
+            messagebox.showerror("Invalid settings", "FTP publish seconds must be 2 or greater.", parent=self)
+            return
+        ftp_enabled = bool(self.vars["ftp_publish_enabled"].get())
+        if ftp_enabled and not self.vars["ftp_host"].get().strip():
+            messagebox.showerror("Invalid settings", "FTP host is required when FTP publishing is enabled.", parent=self)
+            return
         cfg = {
             "mode": mode,
             "region": self.vars["region"].get() or "us",
@@ -532,6 +811,15 @@ class SettingsDialog(tk.Toplevel):
             "cloud_user_id": self.vars["cloud_user_id"].get().strip(),
             "cloud_token": self.vars["cloud_token"].get().strip(),
             "total_print_seconds": total_print_hours * 3600.0,
+            "web_enabled": bool(self.vars["web_enabled"].get()),
+            "web_port": web_port,
+            "ftp_publish_enabled": ftp_enabled,
+            "ftp_host": self.vars["ftp_host"].get().strip(),
+            "ftp_username": self.vars["ftp_username"].get().strip(),
+            "ftp_password": self.vars["ftp_password"].get(),
+            "ftp_directory": self.vars["ftp_directory"].get().strip(),
+            "ftp_public_url": self.vars["ftp_public_url"].get().strip(),
+            "ftp_publish_seconds": ftp_interval,
             "always_on_top": bool(self.vars["always_on_top"].get()),
         }
         if mode == "lan" and (not cfg["printer_ip"] or not cfg["serial"] or not cfg["access_code"]):
@@ -633,6 +921,11 @@ class MonitorApp:
         self.events = queue.Queue()
         self.stop_event = threading.Event()
         self.worker = None
+        self.data_lock = threading.RLock()
+        self.web_server = None
+        self.web_thread = None
+        self.ftp_stop_event = threading.Event()
+        self.ftp_publisher = None
         self.status = {}
         self.last_update = None
         self.connection_text = "Not connected"
@@ -670,6 +963,8 @@ class MonitorApp:
             self.root.after(200, self.open_settings)
         else:
             self.start_connection()
+        self.start_web_server()
+        self.start_ftp_publisher()
         self.root.after(200, self.process_events)
         self.root.after(1000, self.tick)
 
@@ -686,6 +981,7 @@ class MonitorApp:
         self.menu = tk.Menu(self.root, tearoff=0)
         self.menu.add_command(label="Settings", command=self.open_settings)
         self.menu.add_command(label="Layout Editor", command=self.open_layout_editor)
+        self.menu.add_command(label="Dashboard Info", command=self.show_dashboard_info)
         self.menu.add_command(label="Reconnect", command=self.reconnect)
         self.menu.add_separator()
         self.menu.add_command(label="Light On", command=lambda: self.send_light(True))
@@ -853,14 +1149,135 @@ class MonitorApp:
         else:
             messagebox.showwarning("Not connected", "The printer is not connected yet.", parent=self.root)
 
+    def public_status(self):
+        with self.data_lock:
+            return {
+                "printer": self.display.get("printer", "Bambu Printer"),
+                "state": self.display.get("state", "--"),
+                "job": self.display.get("job", "--"),
+                "progress": max(0, min(100, as_int(self.display.get("progress"), 0))),
+                "remaining": self.display.get("remaining", "--"),
+                "finish": self.display.get("finish", "--"),
+                "nozzle": self.display.get("nozzle", "--"),
+                "bed": self.display.get("bed", "--"),
+                "chamber": self.display.get("chamber", "--"),
+                "layer": self.display.get("layer", "--"),
+                "wifi": self.display.get("wifi", "--"),
+                "ams": self.display.get("ams", "--"),
+                "total_hours": self.display.get("total_hours", "--"),
+                "connection": self.connection_text,
+                "updated": self.last_update,
+            }
+
+    def dashboard_url(self):
+        port = as_int(self.cfg.get("web_port"), 8765) or 8765
+        return f"http://<this-pc-ip>:{port}"
+
+    def start_web_server(self):
+        self.stop_web_server()
+        if not bool(self.cfg.get("web_enabled", False)):
+            return
+        port = as_int(self.cfg.get("web_port"), 8765) or 8765
+        try:
+            server = ThreadingHTTPServer(("0.0.0.0", port), DashboardHandler)
+            server.app = self
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            self.web_server = server
+            self.web_thread = thread
+        except Exception as exc:
+            self.web_server = None
+            self.web_thread = None
+            self.connection_text = f"Dashboard failed: {exc}"
+
+    def stop_web_server(self):
+        if not self.web_server:
+            return
+        try:
+            self.web_server.shutdown()
+            self.web_server.server_close()
+        except Exception:
+            pass
+        self.web_server = None
+        self.web_thread = None
+
+    def start_ftp_publisher(self):
+        self.stop_ftp_publisher()
+        if not bool(self.cfg.get("ftp_publish_enabled", False)):
+            return
+        if not self.cfg.get("ftp_host") or not self.cfg.get("ftp_username"):
+            return
+        self.ftp_stop_event = threading.Event()
+        self.ftp_publisher = FtpPublisher(self.cfg, self, self.events, self.ftp_stop_event)
+        self.ftp_publisher.start()
+
+    def stop_ftp_publisher(self):
+        if not self.ftp_publisher:
+            return
+        self.ftp_stop_event.set()
+        self.ftp_publisher = None
+
+    def show_dashboard_info(self):
+        lines = []
+        if bool(self.cfg.get("web_enabled", False)):
+            lines.extend([
+                "Local dashboard:",
+                self.dashboard_url(),
+                "",
+                "Local JSON:",
+                f"{self.dashboard_url()}/api/status",
+            ])
+        if bool(self.cfg.get("ftp_publish_enabled", False)):
+            if lines:
+                lines.append("")
+            lines.extend([
+                "Published dashboard:",
+                self.cfg.get("ftp_public_url") or "(public URL not set)",
+                "",
+                "Published JSON:",
+                ((self.cfg.get("ftp_public_url") or "").rstrip("/") + "/status.json") if self.cfg.get("ftp_public_url") else "(public URL not set)",
+            ])
+        if not lines:
+            lines = ["Dashboards are disabled. Enable one in Settings."]
+        messagebox.showinfo(
+            "Dashboard",
+            "\n".join(lines),
+            parent=self.root,
+        )
+
     def open_settings(self):
+        old_web_enabled = bool(self.cfg.get("web_enabled", False))
+        old_web_port = as_int(self.cfg.get("web_port"), 8765)
+        old_ftp = (
+            bool(self.cfg.get("ftp_publish_enabled", False)),
+            self.cfg.get("ftp_host", ""),
+            self.cfg.get("ftp_username", ""),
+            self.cfg.get("ftp_password", ""),
+            self.cfg.get("ftp_directory", ""),
+            self.cfg.get("ftp_public_url", ""),
+            as_int(self.cfg.get("ftp_publish_seconds"), 10),
+        )
         dialog = SettingsDialog(self.root, self.cfg)
         self.root.wait_window(dialog)
         if dialog.result:
             self.cfg.update(dialog.result)
+            self.display["total_hours"] = format_total_hours(self.cfg.get("total_print_seconds", 0))
             save_config(self.cfg)
             self.root.attributes("-topmost", bool(self.cfg.get("always_on_top", True)))
             self.display["printer"] = self.cfg.get("printer_name", "Bambu Printer")
+            if old_web_enabled != bool(self.cfg.get("web_enabled", False)) or old_web_port != as_int(self.cfg.get("web_port"), 8765):
+                self.start_web_server()
+            new_ftp = (
+                bool(self.cfg.get("ftp_publish_enabled", False)),
+                self.cfg.get("ftp_host", ""),
+                self.cfg.get("ftp_username", ""),
+                self.cfg.get("ftp_password", ""),
+                self.cfg.get("ftp_directory", ""),
+                self.cfg.get("ftp_public_url", ""),
+                as_int(self.cfg.get("ftp_publish_seconds"), 10),
+            )
+            if old_ftp != new_ftp:
+                self.start_ftp_publisher()
             self.draw_face()
             self.start_connection()
 
@@ -940,8 +1357,9 @@ class MonitorApp:
             self.add_print_seconds(estimated_elapsed - accounted)
 
     def apply_status(self, payload):
-        self.status.update(payload)
-        state_raw = as_text(self.status.get("gcode_state"), "UNKNOWN").upper()
+        with self.data_lock:
+            self.status.update(payload)
+            state_raw = as_text(self.status.get("gcode_state"), "UNKNOWN").upper()
         self.update_print_timer(active=state_raw in COUNTED_PRINT_STATES)
         if state_raw in COUNTED_PRINT_STATES:
             self.reconcile_print_job()
@@ -999,6 +1417,8 @@ class MonitorApp:
             save_config(self.cfg)
         except Exception:
             pass
+        self.stop_web_server()
+        self.stop_ftp_publisher()
         self.stop_worker()
         self.root.destroy()
 

@@ -29,10 +29,13 @@ Total shows the locally stored cumulative print-hours counter.
 If the app reconnects to a running print, it estimates and adds uncounted time
 for that current job from progress and remaining time.
 Use Settings > Total print hours to set the starting value from your printer.
+Use Settings > Enable read-only phone dashboard to view status from a phone.
+The default dashboard URL is http://<windows-pc-ip>:8765 and JSON is available
+at /api/status.
 
 Small display controls:
   - Resize it like a normal Windows window
   - Drag the title bar to move it
   - Double-click to open settings
-  - Right-click for settings, layout editor, reconnect, light controls,
+  - Right-click for settings, layout editor, dashboard info, reconnect, light controls,
     always-on-top, exit

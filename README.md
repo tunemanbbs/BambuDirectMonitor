@@ -12,6 +12,7 @@ MQTT and renders a compact round gauge inspired by small ESP32 status displays.
 - Small resizable graphical gauge with square edge progress
 - Built-in layout editor for lower display fields
 - Editable starting value for the total print-hours counter
+- Optional read-only phone dashboard and JSON status API
 - Always-on-top mode
 - Progress, state, file, ETA, layer, nozzle temp, bed temp, and AMS humidity
 - Calculated local finish clock time under the ETA duration
@@ -58,6 +59,19 @@ remaining time, then adds any uncounted time for that job.
 To seed the counter from a printer's existing lifetime print time, open Settings
 and edit **Total print hours**.
 
+To view the monitor from a phone on the same network, enable **Read-only phone
+dashboard** in Settings and open:
+
+```text
+http://<windows-pc-ip>:8765
+```
+
+The JSON endpoint is:
+
+```text
+http://<windows-pc-ip>:8765/api/status
+```
+
 ## Build
 
 Requirements:
@@ -96,7 +110,7 @@ usage data. See [PRIVACY.md](PRIVACY.md).
 - Resize it like a normal Windows window.
 - Drag the title bar to move it.
 - Double-click the gauge to open settings.
-- Right-click for settings, layout editor, reconnect, light controls,
+- Right-click for settings, layout editor, dashboard info, reconnect, light controls,
   always-on-top, and exit.
 
 ## Attribution
